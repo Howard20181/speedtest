@@ -89,23 +89,6 @@ function url_sep(url) {
 */
 this.addEventListener("message", function (e) {
 	var params = e.data.split(" ");
-	if (params[0] === "status") {
-		// return status
-		postMessage(
-			JSON.stringify({
-				testState: testState,
-				dlStatus: dlStatus,
-				ulStatus: ulStatus,
-				pingStatus: pingStatus,
-				clientIp: clientIp,
-				jitterStatus: jitterStatus,
-				dlProgress: dlProgress,
-				ulProgress: ulProgress,
-				pingProgress: pingProgress,
-				testId: testId
-			})
-		);
-	}
 	if (params[0] === "start" && testState === -1) {
 		// start new test
 		testState = 0;
@@ -166,6 +149,11 @@ this.addEventListener("message", function (e) {
 			if (typeof s.telemetry_level !== "undefined") settings.telemetry_level = s.telemetry_level === "basic" ? 1 : s.telemetry_level === "full" ? 2 : s.telemetry_level === "debug" ? 3 : 0; // telemetry level
 			//transform test_order to uppercase, just in case
 			settings.test_order = settings.test_order.toUpperCase();
+			postMessage(
+				JSON.stringify({
+					testState: testState
+				})
+			);
 		} catch (e) {
 			twarn("Possible error in custom test settings. Some settings might not have been applied. Exception: " + e);
 		}
@@ -186,6 +174,20 @@ this.addEventListener("message", function (e) {
 						if (id != null) testId = id;
 					});
 				else testState = 4;
+				postMessage(
+					JSON.stringify({
+						testState: testState,
+						dlStatus: dlStatus,
+						ulStatus: ulStatus,
+						pingStatus: pingStatus,
+						clientIp: clientIp,
+						jitterStatus: jitterStatus,
+						dlProgress: dlProgress,
+						ulProgress: ulProgress,
+						pingProgress: pingProgress,
+						testId: testId
+					})
+				);
 				return;
 			}
 			switch (settings.test_order.charAt(test_pointer)) {
@@ -261,6 +263,20 @@ this.addEventListener("message", function (e) {
 		dlProgress = 0;
 		ulProgress = 0;
 		pingProgress = 0;
+		postMessage(
+			JSON.stringify({
+				testState: testState,
+				dlStatus: dlStatus,
+				ulStatus: ulStatus,
+				pingStatus: pingStatus,
+				clientIp: clientIp,
+				jitterStatus: jitterStatus,
+				dlProgress: dlProgress,
+				ulProgress: ulProgress,
+				pingProgress: pingProgress,
+				testId: testId
+			})
+		);
 	}
 });
 // stops all XHR activity, aggressively
@@ -307,6 +323,12 @@ function getIp(done) {
 			clientIp = xhr.responseText;
 			ispInfo = "";
 		}
+		postMessage(
+			JSON.stringify({
+				testState: testState,
+				clientIp: clientIp,
+			})
+		);
 		done();
 	};
 	xhr.onerror = function () {
@@ -409,12 +431,25 @@ function dlTest(done) {
 				}
 				//update status
 				dlStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
+				postMessage(
+					JSON.stringify({
+						testState: testState,
+						dlStatus: dlStatus,
+						dlProgress: dlProgress,
+					})
+				);
 				if ((t + bonusT) / 1000.0 > settings.time_dl_max || failed) {
 					// test is over, stop streams and timer
 					if (failed || isNaN(dlStatus)) dlStatus = "Fail";
 					clearRequests();
 					clearInterval(interval);
 					dlProgress = 1;
+					postMessage(
+						JSON.stringify({
+							testState: testState,
+							dlProgress: dlProgress,
+						})
+					);
 					tlog("dlTest: " + dlStatus + ", took " + (new Date().getTime() - startT) + "ms");
 					done();
 				}
@@ -557,12 +592,25 @@ function ulTest(done) {
 					}
 					//update status
 					ulStatus = ((speed * 8 * settings.overheadCompensationFactor) / (settings.useMebibits ? 1048576 : 1000000)).toFixed(2); // speed is multiplied by 8 to go from bytes to bits, overhead compensation is applied, then everything is divided by 1048576 or 1000000 to go to megabits/mebibits
+					postMessage(
+						JSON.stringify({
+							testState: testState,
+							ulStatus: ulStatus,
+							ulProgress: ulProgress,
+						})
+					);
 					if ((t + bonusT) / 1000.0 > settings.time_ul_max || failed) {
 						// test is over, stop streams and timer
 						if (failed || isNaN(ulStatus)) ulStatus = "Fail";
 						clearRequests();
 						clearInterval(interval);
 						ulProgress = 1;
+						postMessage(
+							JSON.stringify({
+								testState: testState,
+								ulProgress: ulProgress,
+							})
+						);
 						tlog("ulTest: " + ulStatus + ", took " + (new Date().getTime() - startT) + "ms");
 						done();
 					}
@@ -597,6 +645,8 @@ function pingTest(done) {
 	var prevInstspd = 0; // last ping time, used for jitter calculation
 	xhr = [];
 	// ping function
+	var pings = []
+	var jitters = []
 	var doPing = function () {
 		tverb("ping");
 		pingProgress = i / settings.count_ping;
@@ -637,12 +687,35 @@ function pingTest(done) {
 			}
 			pingStatus = ping.toFixed(2);
 			jitterStatus = jitter.toFixed(2);
+			if (i > 0) {
+				pings.push(pingStatus)
+				if (i > 1) jitters.push(jitterStatus)
+				postMessage(
+					JSON.stringify({
+						testState: testState,
+						pingStatus: pingStatus,
+						jitterStatus: i > 1 ? jitterStatus : null,
+						pingProgress: pingProgress,
+					})
+				);
+			}
+
 			i++;
+
 			tverb("ping: " + pingStatus + " jitter: " + jitterStatus);
+
 			if (i < settings.count_ping) doPing();
 			else {
 				// more pings to do?
 				pingProgress = 1;
+				postMessage(
+					JSON.stringify({
+						testState: testState,
+						pingStatus: pings.reduce((a, b) => a + b, 0) / pings.length,
+						jitterStatus: jitters.reduce((a, b) => a + b, 0) / jitters.length,
+						pingProgress: pingProgress,
+					})
+				);
 				tlog("ping: " + pingStatus + " jitter: " + jitterStatus + ", took " + (new Date().getTime() - startT) + "ms");
 				done();
 			}
