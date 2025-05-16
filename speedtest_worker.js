@@ -16,6 +16,8 @@ let dlProgress = 0; //progress of download test 0-1
 let ulProgress = 0; //progress of upload test 0-1
 let pingProgress = 0; //progress of ping+jitter test 0-1
 let testId = null; //test ID (sent back by telemetry if used, null otherwise)
+let pings = []
+let jitters = []
 
 let log = ""; //telemetry log
 function tlog(s) {
@@ -78,7 +80,23 @@ let test_pointer = 0; //pointer to the next test to run inside settings.test_ord
 function url_sep(url) {
 	return url.match(/\?/) ? "&" : "?";
 }
-
+function postStatus() {
+	// return status
+	postMessage(
+		JSON.stringify({
+			testState: testState,
+			dlStatus: dlStatus,
+			ulStatus: ulStatus,
+			pingStatus: pingStatus,
+			clientIp: clientIp,
+			jitterStatus: jitterStatus,
+			dlProgress: dlProgress,
+			ulProgress: ulProgress,
+			pingProgress: pingProgress,
+			testId: testId,
+		})
+	);
+}
 /*
 	listener for commands from main thread to this worker.
 	commands:
@@ -89,23 +107,6 @@ function url_sep(url) {
 */
 this.addEventListener("message", function(e) {
 	const params = e.data.split(" ");
-	if (params[0] === "status") {
-		// return status
-		postMessage(
-			JSON.stringify({
-				testState: testState,
-				dlStatus: dlStatus,
-				ulStatus: ulStatus,
-				pingStatus: pingStatus,
-				clientIp: clientIp,
-				jitterStatus: jitterStatus,
-				dlProgress: dlProgress,
-				ulProgress: ulProgress,
-				pingProgress: pingProgress,
-				testId: testId
-			})
-		);
-	}
 	if (params[0] === "start" && testState === -1) {
 		// start new test
 		testState = 0;
@@ -184,8 +185,10 @@ this.addEventListener("message", function(e) {
 					sendTelemetry(function(id) {
 						testState = 4;
 						if (id != null) testId = id;
+						postStatus();
 					});
 				else testState = 4;
+				postStatus();
 				return;
 			}
 			switch (settings.test_order.charAt(test_pointer)) {
@@ -261,6 +264,9 @@ this.addEventListener("message", function(e) {
 		dlProgress = 0;
 		ulProgress = 0;
 		pingProgress = 0;
+		pings = [];
+		jitters = [];
+		postStatus();
 	}
 });
 // stops all XHR activity, aggressively
@@ -307,6 +313,7 @@ function getIp(done) {
 			clientIp = xhr.responseText;
 			ispInfo = "";
 		}
+		postStatus();
 		done();
 	};
 	xhr.onerror = function() {
@@ -415,10 +422,12 @@ function dlTest(done) {
 					clearRequests();
 					clearInterval(interval);
 					dlProgress = 1;
+					postStatus();
 					tlog("dlTest: " + dlStatus + ", took " + (new Date().getTime() - startT) + "ms");
 					done();
 				}
 			}
+			postStatus();
 		}.bind(this),
 		200
 	);
@@ -563,10 +572,12 @@ function ulTest(done) {
 						clearRequests();
 						clearInterval(interval);
 						ulProgress = 1;
+						postStatus();
 						tlog("ulTest: " + ulStatus + ", took " + (new Date().getTime() - startT) + "ms");
 						done();
 					}
 				}
+				postStatus();
 			}.bind(this),
 			200
 		);
@@ -637,15 +648,23 @@ function pingTest(done) {
 			}
 			pingStatus = ping.toFixed(2);
 			jitterStatus = jitter.toFixed(2);
+			if (i > 0) {
+				pings.push(pingStatus)
+				if (i > 1) {
+					jitters.push(jitterStatus)
+				}
+			}
 			i++;
 			tverb("ping: " + pingStatus + " jitter: " + jitterStatus);
 			if (i < settings.count_ping) doPing();
 			else {
 				// more pings to do?
 				pingProgress = 1;
+				postStatus();
 				tlog("ping: " + pingStatus + " jitter: " + jitterStatus + ", took " + (new Date().getTime() - startT) + "ms");
 				done();
 			}
+			postStatus();
 		}.bind(this);
 		xhr[0].onerror = function() {
 			// a ping failed, cancel test
@@ -667,10 +686,12 @@ function pingTest(done) {
 				else {
 					// more pings to do?
 					pingProgress = 1;
+					postStatus();
 					tlog("ping: " + pingStatus + " jitter: " + jitterStatus + ", took " + (new Date().getTime() - startT) + "ms");
 					done();
 				}
 			}
+			postStatus();
 		}.bind(this);
 		// send xhr
 		xhr[0].open("GET", settings.url_ping + url_sep(settings.url_ping) + (settings.mpot ? "cors=true&" : "") + "r=" + Math.random(), true); // random string to prevent caching

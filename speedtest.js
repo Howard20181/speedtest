@@ -339,12 +339,6 @@ Speedtest.prototype = {
         }
       }
     }.bind(this);
-    this.updater = setInterval(
-      function() {
-        this.worker.postMessage("status");
-      }.bind(this),
-      200
-    );
     if (this._state == 1)
         throw "When using multiple points of test, you must call selectServer before starting the test";
     if (this._state == 2) {
